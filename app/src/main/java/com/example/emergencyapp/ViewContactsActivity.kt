@@ -1,13 +1,21 @@
 package com.example.emergencyapp
 
-import com.example.emergencyapp.User
-
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
 import android.content.DialogInterface
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.google.firebase.database.*
 
 class ViewContactsActivity : AppCompatActivity() {
@@ -15,23 +23,30 @@ class ViewContactsActivity : AppCompatActivity() {
     private lateinit var database: DatabaseReference
     private lateinit var contactListView: ListView
     private lateinit var contactList: ArrayList<User>
+    private lateinit var undoButton: Button
+
+    private var lastDeletedUser: User? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_view_contacts)
 
         contactListView = findViewById(R.id.listViewContacts)
-        contactList = ArrayList()
+        undoButton = findViewById(R.id.buttonUndoDelete)
 
+        contactList = ArrayList()
         database = FirebaseDatabase.getInstance("https://sos-emergency-app-d0ff3-default-rtdb.asia-southeast1.firebasedatabase.app/")
             .reference.child("Users")
+
+        // Create Notification Channel (for Android O and above)
+        createNotificationChannel()
 
         database.addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 contactList.clear()
                 for (data in snapshot.children) {
                     val user = data.getValue(User::class.java)
-                    user?.id = data.key // save the Firebase key
+                    user?.id = data.key
                     user?.let { contactList.add(it) }
                 }
 
@@ -52,25 +67,31 @@ class ViewContactsActivity : AppCompatActivity() {
 
                 contactListView.adapter = adapter
 
-                // Delete on long click
+                // 🗑️ Delete on long click
                 contactListView.setOnItemLongClickListener { _, _, position, _ ->
                     val user = contactList[position]
                     AlertDialog.Builder(this@ViewContactsActivity)
                         .setTitle("Delete Contact")
                         .setMessage("Do you want to delete ${user.name}?")
                         .setPositiveButton("Yes") { _, _ ->
+                            lastDeletedUser = user // Store the last deleted user
                             database.child(user.id!!).removeValue()
                             Toast.makeText(this@ViewContactsActivity, "Deleted", Toast.LENGTH_SHORT).show()
+
+                            // Show Undo button
+                            undoButton.visibility = android.view.View.VISIBLE
+
+                            // Show a notification about deletion
+                            showNotification("Contact Deleted", "${user.name} has been deleted.")
                         }
                         .setNegativeButton("No", null)
                         .show()
                     true
                 }
 
-                // Update on single click
+                // ✏️ Update on single click
                 contactListView.setOnItemClickListener { _, _, position, _ ->
                     val user = contactList[position]
-
                     val inflater = LayoutInflater.from(this@ViewContactsActivity)
                     val view = inflater.inflate(R.layout.dialog_update_contact, null)
 
@@ -104,5 +125,51 @@ class ViewContactsActivity : AppCompatActivity() {
                 Toast.makeText(this@ViewContactsActivity, "Failed to load data", Toast.LENGTH_SHORT).show()
             }
         })
+
+        // 🎬 Undo button click listener
+        undoButton.setOnClickListener {
+            lastDeletedUser?.let { user ->
+                // Restore the deleted contact
+                database.child(user.id!!).setValue(user).addOnSuccessListener {
+                    Toast.makeText(this@ViewContactsActivity, "Contact restored", Toast.LENGTH_SHORT).show()
+                    undoButton.visibility = android.view.View.GONE // Hide undo button after restoration
+                    lastDeletedUser = null
+
+                    // Show a notification about restoring the contact
+                    showNotification("Contact Restored", "${user.name} has been restored.")
+                }.addOnFailureListener {
+                    Toast.makeText(this@ViewContactsActivity, "Failed to restore contact", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Default Channel"
+            val descriptionText = "Channel for notifications"
+            val importance = NotificationManager.IMPORTANCE_DEFAULT
+            val channel = NotificationChannel("default_channel", name, importance).apply {
+                description = descriptionText
+            }
+            // Register the channel with the system
+            val notificationManager: NotificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun showNotification(title: String, message: String) {
+        val builder = NotificationCompat.Builder(this, "default_channel")
+            .setSmallIcon(R.drawable.notify)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+
+        val notificationManager = NotificationManagerCompat.from(this)
+
+        // Send the notification
+        notificationManager.notify(0, builder.build())
     }
 }

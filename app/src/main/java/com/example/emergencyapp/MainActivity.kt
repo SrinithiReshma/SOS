@@ -4,9 +4,12 @@ import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
 import android.os.Build
 import android.os.Bundle
 import android.widget.Button
@@ -25,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private val CHANNEL_ID = "sos_channel_id"
     private val NOTIFICATION_ID = 101
     private val NOTIFICATION_PERMISSION_REQUEST = 1001
+    private lateinit var dbHelper: DBHelper
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,6 +39,9 @@ class MainActivity : AppCompatActivity() {
             "https://sos-emergency-app-d0ff3-default-rtdb.asia-southeast1.firebasedatabase.app/"
         ).reference.child("Users")
 
+        // Initialize SQLite DB helper
+        dbHelper = DBHelper(this)
+
         createNotificationChannel()
         requestNotificationPermission() // Ask for permission on start
 
@@ -42,6 +49,11 @@ class MainActivity : AppCompatActivity() {
         val etPhone = findViewById<EditText>(R.id.editPhone)
         val btnSave = findViewById<Button>(R.id.btnSave)
         val btnView = findViewById<Button>(R.id.btnViewContacts)
+
+        // Load last saved contact from SharedPreferences
+        val sharedPref = getSharedPreferences("EmergencyAppPrefs", Context.MODE_PRIVATE)
+        etName.setText(sharedPref.getString("last_name", ""))
+        etPhone.setText(sharedPref.getString("last_phone", ""))
 
         btnView.setOnClickListener {
             val intent = Intent(this, ViewContactsActivity::class.java)
@@ -60,6 +72,19 @@ class MainActivity : AppCompatActivity() {
                     database.child(userId).setValue(user)
                         .addOnSuccessListener {
                             Toast.makeText(this, "Data Saved Successfully!", Toast.LENGTH_SHORT).show()
+
+                            // ✅ Save locally in SQLite
+                            val inserted = dbHelper.insertUser(name, phone)
+                            if (inserted) {
+                                Toast.makeText(this, "Saved Locally in SQLite", Toast.LENGTH_SHORT).show()
+                            }
+
+                            // ✅ Save last contact in SharedPreferences
+                            val editor = sharedPref.edit()
+                            editor.putString("last_name", name)
+                            editor.putString("last_phone", phone)
+                            editor.apply()
+
                             etName.text.clear()
                             etPhone.text.clear()
                             showNotification(name, phone)
@@ -95,7 +120,7 @@ class MainActivity : AppCompatActivity() {
         val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.notify) // Ensure this icon exists in drawable
+            .setSmallIcon(R.drawable.notify)
             .setContentTitle("Emergency Contact Added")
             .setContentText("$name - $phone has been added")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -140,5 +165,25 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Notification permission denied", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+}
+
+// ✅ SQLite DBHelper class
+class DBHelper(context: Context) : SQLiteOpenHelper(context, "UserDB", null, 1) {
+    override fun onCreate(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS Users(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, phone TEXT)")
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        db.execSQL("DROP TABLE IF EXISTS Users")
+        onCreate(db)
+    }
+
+    fun insertUser(name: String, phone: String): Boolean {
+        val db = writableDatabase
+        val cv = ContentValues()
+        cv.put("name", name)
+        cv.put("phone", phone)
+        return db.insert("Users", null, cv) != -1L
     }
 }
