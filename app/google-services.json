@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "749232430696",
+    "project_id": "sos-emergency-app-d0ff3",
+    "storage_bucket": "sos-emergency-app-d0ff3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:749232430696:android:7ab04593a94f0d4fa2e5dd",
+        "android_client_info": {
+          "package_name": "com.example.emergencyapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7YJFbyokHVSnAAmci_nXNfDK2nEeLj2Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
